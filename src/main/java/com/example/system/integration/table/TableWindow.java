@@ -1,15 +1,17 @@
 package com.example.system.integration.table;
 
 
+import com.example.system.integration.enums.TableRowState;
 import com.example.system.integration.reader.DatabaseReader;
 import com.example.system.integration.reader.FileReader;
+import com.example.system.integration.utils.TableValidationUtils;
 import lombok.RequiredArgsConstructor;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @RequiredArgsConstructor
 public class TableWindow extends JFrame {
@@ -17,8 +19,7 @@ public class TableWindow extends JFrame {
     String[] rowValidators;
     FileReader fileReader;
     DatabaseReader databaseReader;
-
-    int[][] rowsStates = new int[0][15];
+    TableRowState[][] rowsStates = new TableRowState[0][15];
     DefaultTableModel tableModel;
     JFrame frame;
     JTable table;
@@ -68,17 +69,17 @@ public class TableWindow extends JFrame {
     }
 
     private void validateTable() {
-        rowsStates = new int[tableModel.getRowCount()][15];
+        rowsStates = new TableRowState[tableModel.getRowCount()][15];
+
+        for (int duplicationIndex : TableValidationUtils.rowsWithDuplications(tableModel))
+            for (int col = 0; col < tableModel.getColumnCount(); col++)
+                rowsStates[duplicationIndex][col] = TableRowState.DUPLICATE;
 
         for (int row = 0; row < tableModel.getRowCount(); row++)
             for (int col = 0; col < tableModel.getColumnCount(); col++) {
                 Object cell = tableModel.getValueAt(row, col);
-                if (cell == null) {
-                    rowsStates[row][col] = -1;
-                } else if (!validateCell((String)cell, rowValidators[col])) {
-                    rowsStates[row][col] = -1;
-                } else {
-                    rowsStates[row][col] = 0;
+                if (cell == null || !TableValidationUtils.cellWithPattern((String)cell, rowValidators[col])) {
+                    rowsStates[row][col] = TableRowState.INVALID;
                 }
             }
 
@@ -90,29 +91,38 @@ public class TableWindow extends JFrame {
         frame.setSize(1700, 500);
     }
 
-    private boolean validateCell(String cell, String validator) {
-        Pattern pattern = Pattern.compile(validator);
-        Matcher matcher = pattern.matcher(cell);
-        return matcher.find();
+    public void markRowAsDirty(int dirtyRowIndex) {
+        Arrays.fill(rowsStates[dirtyRowIndex], TableRowState.DIRTY);
+        for (int col = 0; col < headers.length; col++) {
+            table.getColumnModel().getColumn(col).setCellRenderer(new TableCellRenderer(rowsStates));
+        }
     }
 
     private void initButtonListeners() {
+        AtomicBoolean isDataCurrentlyBeingRead = new AtomicBoolean(false);
+
         readTxtButton.addActionListener(e -> {
+            isDataCurrentlyBeingRead.set(true);
             String[][] rows = fileReader.readTxtFile();
             for (String[] row : rows) tableModel.addRow(row);
             validateTable();
+            isDataCurrentlyBeingRead.set(false);
         });
 
         readXmlButton.addActionListener(e -> {
+            isDataCurrentlyBeingRead.set(true);
             String[][] rows = fileReader.readXMLFile();
             for (String[] row : rows) tableModel.addRow(row);
             validateTable();
+            isDataCurrentlyBeingRead.set(false);
         });
 
         readDatabaseButton.addActionListener(e -> {
+            isDataCurrentlyBeingRead.set(true);
             String[][] rows = databaseReader.readFromDatabase();
             for (String[] row : rows) tableModel.addRow(row);
             validateTable();
+            isDataCurrentlyBeingRead.set(false);
         });
 
         writeTxtButton.addActionListener(e -> fileReader.exportDataToTxtFile(tableModel));
@@ -122,5 +132,12 @@ public class TableWindow extends JFrame {
         writeDatabaseButton.addActionListener(e -> databaseReader.exportDataToDatabase(tableModel));
 
         validateButton.addActionListener(e -> validateTable());
+
+        table.getModel().addTableModelListener(e -> {
+            if (!isDataCurrentlyBeingRead.get()) {
+                int row = e.getFirstRow();
+                markRowAsDirty(row);
+            }
+        });
     }
 }
