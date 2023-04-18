@@ -1,0 +1,126 @@
+package com.example.system.integration.table;
+
+
+import com.example.system.integration.reader.DatabaseReader;
+import com.example.system.integration.reader.FileReader;
+import lombok.RequiredArgsConstructor;
+
+import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
+import java.awt.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+@RequiredArgsConstructor
+public class TableWindow extends JFrame {
+    String[] headers;
+    String[] rowValidators;
+    FileReader fileReader;
+    DatabaseReader databaseReader;
+
+    int[][] rowsStates = new int[0][15];
+    DefaultTableModel tableModel;
+    JFrame frame;
+    JTable table;
+    JLabel label = new JLabel("Integracja Systemów - Rafał Baliński");
+    JButton readTxtButton = new JButton("wczytaj dane z pliku TXT");
+    JButton readXmlButton = new JButton("wczytaj dane z pliku XML");
+    JButton readDatabaseButton = new JButton("wczytaj dane z bazy danych");
+    JButton writeTxtButton = new JButton("zapisz dane do pliku TXT");
+    JButton writeXmlButton = new JButton("zapisz dane do pliku XML");
+    JButton writeDatabaseButton = new JButton("zapisz dane do bazy danych");
+    JButton validateButton = new JButton("waliduj dane");
+
+    public TableWindow(String[] headers, String[] rowValidators, String file, DatabaseReader databaseReader) {
+        this.headers = headers;
+        this.rowValidators = rowValidators;
+        this.fileReader = new FileReader(headers, file);
+        this.databaseReader = databaseReader;
+    }
+
+    public void showWindow() {
+        frame = new JFrame("Laptop table");
+
+        tableModel = new DefaultTableModel(new String[0][15], headers);
+        table = new JTable(tableModel);
+
+        JScrollPane scrollPane = new JScrollPane(table);
+        scrollPane.setPreferredSize(new Dimension(1700, 500));
+
+        BorderLayout borderLayout = new BorderLayout();
+        setLayout(borderLayout);
+        frame.add(label, BorderLayout.NORTH);
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 50, 10));
+        buttonPanel.add(readTxtButton);
+        buttonPanel.add(readXmlButton);
+        buttonPanel.add(readDatabaseButton);
+        buttonPanel.add(writeTxtButton);
+        buttonPanel.add(writeXmlButton);
+        buttonPanel.add(writeDatabaseButton);
+        buttonPanel.add(validateButton);
+        frame.add(buttonPanel, BorderLayout.SOUTH);
+
+        frame.add(scrollPane, BorderLayout.CENTER);
+        frame.setSize(1700, 500);
+        frame.setVisible(true);
+        initButtonListeners();
+    }
+
+    private void validateTable() {
+        rowsStates = new int[tableModel.getRowCount()][15];
+
+        for (int row = 0; row < tableModel.getRowCount(); row++)
+            for (int col = 0; col < tableModel.getColumnCount(); col++) {
+                Object cell = tableModel.getValueAt(row, col);
+                if (cell == null) {
+                    rowsStates[row][col] = -1;
+                } else if (!validateCell((String)cell, rowValidators[col])) {
+                    rowsStates[row][col] = -1;
+                } else {
+                    rowsStates[row][col] = 0;
+                }
+            }
+
+        for (int col = 0; col < headers.length; col++) {
+            table.getColumnModel().getColumn(col).setCellRenderer(new TableCellRenderer(rowsStates));
+        }
+
+        frame.setSize(1701, 500);
+        frame.setSize(1700, 500);
+    }
+
+    private boolean validateCell(String cell, String validator) {
+        Pattern pattern = Pattern.compile(validator);
+        Matcher matcher = pattern.matcher(cell);
+        return matcher.find();
+    }
+
+    private void initButtonListeners() {
+        readTxtButton.addActionListener(e -> {
+            String[][] rows = fileReader.readTxtFile();
+            for (String[] row : rows) tableModel.addRow(row);
+            validateTable();
+        });
+
+        readXmlButton.addActionListener(e -> {
+            String[][] rows = fileReader.readXMLFile();
+            for (String[] row : rows) tableModel.addRow(row);
+            validateTable();
+        });
+
+        readDatabaseButton.addActionListener(e -> {
+            String[][] rows = databaseReader.readFromDatabase();
+            for (String[] row : rows) tableModel.addRow(row);
+            validateTable();
+        });
+
+        writeTxtButton.addActionListener(e -> fileReader.exportDataToTxtFile(tableModel));
+
+        writeXmlButton.addActionListener(e -> fileReader.exportDataToXmlFile(tableModel));
+
+        writeDatabaseButton.addActionListener(e -> databaseReader.exportDataToDatabase(tableModel));
+
+        validateButton.addActionListener(e -> validateTable());
+    }
+}
